@@ -1,16 +1,17 @@
 ENV_FILE ?= .env
 envget = $(shell [ -f $(ENV_FILE) ] && sed -n 's/^$(1)=//p' $(ENV_FILE) | tr -d "'\"")
 
-VM			?= $(call envget,VM_HOSTNAME)
-USER_  		?= $(call envget,ADMIN_USER)
-CPUS 		?= 2
-MEM       	?= 4G
-DISK      	?= 20G
-IMAGE     	?= 24.04
-TEMPLATE  	?= tofu/cloud-init.tpl.yaml
-RENDERED  	?= tofu/cloud-init.rendered.yaml
-SNAP      	?= clean
-VM_IP      	= $$(multipass info $(VM) --format csv | tail -1 | cut -d, -f3)
+VM							?= $(call envget,VM_HOSTNAME)
+USER_  						?= $(call envget,ADMIN_USER)
+CPUS 						?= 2
+MEM       					?= 6G
+DISK      					?= 20G
+IMAGE     					?= 24.04
+TEMPLATE  					?= tofu/cloud-init.tpl.yaml
+RENDERED  					?= tofu/cloud-init.rendered.yaml
+SNAP      					?= clean
+SSH_PRIVATE_KEY_PATH		?= $(call envget,SSH_PRIVATE_KEY_PATH)
+VM_IP      					= $$(multipass list --format csv | awk -F, '$$1=="$(VM)"{print $$3}')
 
 
 .PHONY: help config render \
@@ -31,13 +32,13 @@ render: ## Fill credentials from .env into the cloud-init template
 
 # ----------------- MULTIPASS -----------------
 vm-up: render ## Create the local VM with cloud-init
-	multipass launch $(IMAGE) --name $(VM) --cpus $(CPUS) --memory $(MEM) --disk $(DISK) --cloud-init $(RENDERED)
+	multipass launch $(IMAGE) --name $(VM) --cpus $(CPUS) --memory $(MEM) --disk $(DISK) --timeout 1200 --cloud-init $(RENDERED)
 	@rm -f $(RENDERED)
 	@echo "IP: $(VM_IP)"
 vm-ip: ## Print the local VM IP
 	@echo $(VM_IP)
 vm-ssh: ## SSH into the local VM
-	ssh $(USER_)@$(VM_IP)
+	ssh -i $(SSH_PRIVATE_KEY_PATH) -o IdentitiesOnly=yes $(USER_)@$(VM_IP)
 vm-stop: ## Stop the local VM (frees RAM/CPU, keeps the disk)
 	multipass stop $(VM)
 vm-start: ## Start the local VM
@@ -59,3 +60,5 @@ vm-inventory: ## Write the Ansible inventory for the local VM
 	@printf "[k8s]\n$(VM) ansible_host=%s ansible_user=$(USER_)\n" "$(VM_IP)" > ansible/inventory.local.ini
 vm-ansible: vm-inventory ## Run the playbook against the local VM
 	ansible-playbook -i ansible/inventory.local.ini ansible/site.yml --ask-become-pass
+vm-logs:
+	@multipass exec $(VM) -- sudo tail -f /var/log/cloud-init-output.log

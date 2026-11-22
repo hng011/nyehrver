@@ -4,7 +4,7 @@ hostname: ${VM_HOSTNAME}
 users:
   - name: ${ADMIN_USER}
     groups: [sudo]
-    shell: false
+    shell: /bin/bash
     lock_passwd: false
     hashed_passwd: ${SUDO_PASSWD_HASH}
     ssh_authorized_keys:
