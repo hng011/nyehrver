@@ -1,5 +1,5 @@
 - name: Install k3s and the platform
-  hosts: vps
+  hosts: k3s            # must match the [k3s] group in inventory.vps.ini
   become: true
 
   vars:
@@ -134,7 +134,7 @@
 
     - name: Render the ClusterIssuers
       ansible.builtin.template:
-        src: templates/cluster-issuers.yaml.j2
+        src: ../k8s/platform/cluster-issuers.yaml.j2
         dest: /root/cluster-issuers.yaml
         mode: "0600"
 
