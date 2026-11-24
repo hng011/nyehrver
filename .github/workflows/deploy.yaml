@@ -9,6 +9,9 @@ on:
       port:
         type: number
         default: 8000
+      namespace:
+        type: string
+        default: ""
     secrets:
       INFRA_TOKEN:
         required: true
@@ -48,12 +51,17 @@ jobs:
       - name: Update values and push
         working-directory: nyehrver
         run: |
-          cat > infra/k8s/apps/${{ inputs.name }}.yaml <<EOF
+          FILE=infra/k8s/apps/${{ inputs.name }}.yaml
+          cat > $FILE <<EOF
           image:
             repository: $IMAGE
             tag: "$TAG"
           port: ${{ inputs.port }}
           EOF
+          if [ -n "${{ inputs.namespace }}" ]; then
+            echo "namespace: ${{ inputs.namespace }}" >> $FILE
+          fi
+          cat $FILE
           git config user.name github-actions
           git config user.email github-actions@users.noreply.github.com
           git add .
