@@ -1,0 +1,7 @@
+image:
+  repository: nginxinc/nginx-unprivileged
+  tag: "1.27-alpine"
+port: 8080
+healthPath: /
+host: "hello.kaktus.foo"
+replicas: 1
