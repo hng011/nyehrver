@@ -1,0 +1,98 @@
+- name: Bootstrap a fresh server (run once, as the provider's default user)
+  hosts: bootstrap
+  become: true
+  vars:
+    admin_user: "{{ lookup('env', 'ADMIN_USER') }}"
+    admin_password_hash: "{{ lookup('env', 'SUDO_PASSWD_HASH') }}"
+    ssh_pub_key: "{{ lookup('env', 'SSH_PUB_KEY') }}"
+    vps_hostname: "{{ lookup('env', 'VPS_HOSTNAME') }}"
+    default_user: ubuntu
+
+  pre_tasks:
+    - name: Stop if a required value from .env is missing
+      ansible.builtin.assert:
+        that:
+          - admin_user | length > 0
+          - vps_hostname | length > 0
+          - admin_password_hash is match('^\$6\$')
+          - ssh_pub_key is match('^ssh-')
+        fail_msg: "Check ADMIN_USER, VPS_HOSTNAME, SUDO_PASSWD_HASH and SSH_PUB_KEY in .env"
+
+  tasks:
+    - name: Install base packages
+      ansible.builtin.apt:
+        name: [ufw, fail2ban, unattended-upgrades]
+        update_cache: true
+
+    - name: Set timezone
+      community.general.timezone:
+        name: Asia/Jakarta
+
+    - name: Set the hostname
+      ansible.builtin.hostname:
+        name: "{{ vps_hostname }}"
+
+    - name: Make the hostname resolve locally
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1\s'
+        line: "127.0.1.1 {{ vps_hostname }}"
+
+    - name: Create the admin user with sudo
+      ansible.builtin.user:
+        name: "{{ admin_user }}"
+        groups: sudo
+        append: true
+        shell: /bin/bash
+        password: "{{ admin_password_hash }}"
+
+    - name: Install the SSH public key for the admin user
+      ansible.posix.authorized_key:
+        user: "{{ admin_user }}"
+        key: "{{ ssh_pub_key }}"
+        exclusive: true
+
+    - name: Allow SSH, HTTP and HTTPS
+      community.general.ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop: ["22", "80", "443"]
+
+    - name: Enable firewall (deny incoming by default)
+      community.general.ufw:
+        state: enabled
+        policy: deny
+        direction: incoming
+
+    - name: Enable fail2ban
+      ansible.builtin.systemd:
+        name: fail2ban
+        enabled: true
+        state: started
+
+    - name: Harden SSH (no root, no passwords)
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/99-hardening.conf
+        content: |
+          PermitRootLogin no
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+        mode: "0644"
+      notify: Restart ssh
+
+    - name: Remove the default user's SSH keys
+      ansible.builtin.file:
+        path: "/home/{{ default_user }}/.ssh/authorized_keys"
+        state: absent
+
+    - name: Lock the default user's password
+      ansible.builtin.user:
+        name: "{{ default_user }}"
+        password_lock: true
+
+  handlers:
+    - name: Restart ssh
+      ansible.builtin.systemd:
+        name: ssh
+        state: restarted

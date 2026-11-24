@@ -9,9 +9,14 @@ RENDERED  					?= tofu/cloud-init.rendered.yaml
 SSH_PRIVATE_KEY_PATH		?= $(call envget,SSH_PRIVATE_KEY_PATH)
 VM_IP      					= $$(multipass list --format csv | awk -F, '$$1=="$(VM)"{print $$3}')
 
+VPS_IP               ?= $(call envget,VPS_IP)
+VPS_HOSTNAME         ?= $(call envget,VPS_HOSTNAME)
+VPS_DEFAULT_USER     ?= ubuntu
+SSH_OPTS              = -o IdentitiesOnly=yes
 
 .PHONY: help config render \
-  vm-up vm-ip vm-ssh vm-stop vm-start vm-status vm-snapshot vm-snapshots vm-restore vm-down vm-inventory vm-ansible vm-ping vm-k3s vm-logs
+  vm-up vm-ip vm-ssh vm-stop vm-start vm-status vm-snapshot vm-snapshots vm-restore vm-down vm-inventory vm-ansible vm-ping vm-k3s vm-logs \
+  vps-bootstrap vps-inventory vps-ssh vps-k3s
 
 # config: ## Show the local VM settings make will use
 # 	@echo "VM=$(VM) CPUS=$(CPUS) MEM=$(MEM) DISK=$(DISK) IMAGE=$(IMAGE) USER=$(USER_)"
@@ -61,3 +66,20 @@ vm-k3s: vm-inventory ## Install k3s on the local VM with Ansible
 	cd ansible && ansible-playbook k3s.yaml --ask-become-pass
 vm-logs:
 	@multipass exec $(VM) -- sudo tail -f /var/log/cloud-init-output.log
+
+
+# ----------------- REAL REMOTE -----------------
+vps-bootstrap: ## First setup of a new VPS (logs in as the provider's default user)
+	@test -n "$(VPS_IP)" || (echo "VPS_IP is missing in $(ENV_FILE)" && exit 1)
+	@printf "[bootstrap]\n$(VPS_HOSTNAME) ansible_host=$(VPS_IP) ansible_user=$(VPS_DEFAULT_USER) ansible_ssh_private_key_file=$(SSH_PRIVATE_KEY_PATH) ansible_ssh_common_args='$(SSH_OPTS)'\n" > ansible/inventory.bootstrap.ini
+	@set -a && . ./$(ENV_FILE) && set +a && \
+		cd ansible && ansible-playbook -i inventory.bootstrap.ini bootstrap.yaml --ask-become-pass
+vps-inventory: ## Write the Ansible inventory for the VPS
+	@printf "[k3s]\n$(VPS_HOSTNAME) ansible_host=$(VPS_IP) ansible_user=$(USER_) ansible_ssh_private_key_file=$(SSH_PRIVATE_KEY_PATH) ansible_ssh_common_args='$(SSH_OPTS)'\n" > ansible/inventory.vps.ini
+	@cat ansible/inventory.vps.ini
+vps-ping: vps-inventory ## Check Ansible can reach the VPS as your admin user
+	cd ansible && ansible -i inventory.vps.ini k3s -m ping
+vps-ssh: ## SSH into the VPS as your admin user
+	ssh -i $(SSH_PRIVATE_KEY_PATH) $(SSH_OPTS) $(USER_)@$(VPS_IP)
+vps-k3s: vps-inventory ## Install k3s and the platform on the VPS
+	cd ansible && ansible-playbook -i inventory.vps.ini k3s.yaml --ask-become-pass

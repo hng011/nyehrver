@@ -1,11 +1,15 @@
-- name: Install a single-node k3s server
+- name: Prepare a single-node k3s server
   hosts: k3s
   become: true
   vars:
-    k3s_version: v1.37.2+k3s1 
+    k3s_version: v1.37.2+k3s1
+    helm_version: v4.3.1
+    cert_manager_version: v1.21.3
+    argocd_chart_version: 10.3.0
     pod_cidr: 10.42.0.0/16
     service_cidr: 10.43.0.0/16
     admin_user: "{{ ansible_user }}"
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
 
   pre_tasks:
     - name: Prepare Ansible's temp folder for root
@@ -13,6 +17,7 @@
       changed_when: false
 
   tasks:
+    # ---------- Cluster ----------
     - name: Allow pod and service networks through ufw
       community.general.ufw:
         rule: allow
@@ -53,7 +58,7 @@
 
     - name: Give the admin user kubectl access
       ansible.builtin.copy:
-        src: /etc/rancher/k3s/k3s.yaml
+        src: "{{ kubeconfig }}"
         dest: "/home/{{ admin_user }}/.kube/config"
         remote_src: true
         owner: "{{ admin_user }}"
@@ -66,3 +71,44 @@
         line: "export KUBECONFIG=$HOME/.kube/config"
         owner: "{{ admin_user }}"
         group: "{{ admin_user }}"
+
+    # ---------- Helm ----------
+    - name: Check which Helm version is installed
+      ansible.builtin.command: helm version --short
+      register: helm_installed
+      changed_when: false
+      failed_when: false
+
+    - name: Install Helm (only if missing or a different version)
+      ansible.builtin.shell: >
+        curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 |
+        DESIRED_VERSION={{ helm_version }} bash
+      when: helm_version not in (helm_installed.stdout | default(''))
+
+    # ---------- Platform ----------
+    - name: Add chart repositories
+      ansible.builtin.command: "helm repo add {{ item.name }} {{ item.url }} --force-update"
+      loop:
+        - { name: jetstack, url: https://charts.jetstack.io }
+        - { name: argo, url: https://argoproj.github.io/argo-helm }
+      environment: { KUBECONFIG: "{{ kubeconfig }}" }
+      changed_when: false
+
+    - name: Install or upgrade cert-manager
+      ansible.builtin.command: >
+        helm upgrade --install cert-manager jetstack/cert-manager
+        --namespace cert-manager --create-namespace
+        --version {{ cert_manager_version }}
+        --set crds.enabled=true --wait
+      environment: { KUBECONFIG: "{{ kubeconfig }}" }
+      register: cm
+      changed_when: "'REVISION: 1' in cm.stdout"
+
+    - name: Install or upgrade Argo CD
+      ansible.builtin.command: >
+        helm upgrade --install argocd argo/argo-cd
+        --namespace argocd --create-namespace
+        --version {{ argocd_chart_version }} --wait
+      environment: { KUBECONFIG: "{{ kubeconfig }}" }
+      register: argo
+      changed_when: "'REVISION: 1' in argo.stdout"
