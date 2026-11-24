@@ -1,0 +1,4 @@
+image:
+  repository: ghcr.io/hng011/bot-liar
+  tag: "b74c377"
+port: 8000
