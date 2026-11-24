@@ -1,0 +1,4 @@
+apiVersion: v2
+name: app
+description: Generic app (Deployment, Service, Ingress with HTTPS)
+version: 0.2.0

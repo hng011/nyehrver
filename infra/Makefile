@@ -79,4 +79,5 @@ vps-ping: vps-inventory ## Check Ansible can reach the VPS as your admin user
 vps-ssh: ## SSH into the VPS as your admin user
 	ssh -i $(SSH_PRIVATE_KEY_PATH) $(SSH_OPTS) $(USER_)@$(VPS_IP)
 vps-k3s: vps-inventory ## Install k3s and the platform on the VPS
-	cd ansible && ansible-playbook -i inventory.vps.ini k3s.yaml --ask-become-pass
+	@set -a && . ./$(ENV_FILE) && set +a && \
+		cd ansible && ansible-playbook -i inventory.vps.ini k3s.yaml --ask-become-pass

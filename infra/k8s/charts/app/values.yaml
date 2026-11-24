@@ -1,0 +1,12 @@
+image:
+  repository: ""
+  tag: ""
+replicas: 2
+port: 8000
+healthPath: /healthz
+host: ""
+certIssuer: letsencrypt-prod
+env: {}
+resources:
+  requests: { cpu: 20m, memory: 64Mi }
+  limits:   { memory: 128Mi }

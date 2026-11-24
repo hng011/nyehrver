@@ -1,0 +1,40 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: apps
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://github.com/hng011/nyehrver
+        revision: main
+        files:
+          - path: infra/k8s/apps/*.yaml
+  template:
+    metadata:
+      name: '{{ trimSuffix ".yaml" .path.filename }}'
+      namespace: argocd
+    spec:
+      project: default
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ trimSuffix ".yaml" .path.filename }}'
+      sources:
+        - repoURL: https://github.com/hng011/nyehrver
+          targetRevision: main
+          path: infra/k8s/charts/app
+          helm:
+            releaseName: '{{ trimSuffix ".yaml" .path.filename }}'
+            valueFiles:
+              - '$values/{{ .path.path }}/{{ .path.filename }}'
+        - repoURL: https://github.com/hng011/nyehrver
+          targetRevision: main
+          ref: values
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
