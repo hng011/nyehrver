@@ -18,12 +18,56 @@
           - ssh_pub_key is match('^ssh-')
         fail_msg: "Check ADMIN_USER, VPS_HOSTNAME, SUDO_PASSWD_HASH and SSH_PUB_KEY in .env"
 
+    - name: Wait for the provider's first-boot setup to finish
+      ansible.builtin.command: cloud-init status --wait
+      changed_when: false
+      failed_when: false
+
   tasks:
+    # ---------- System up to date ----------
+    - name: Upgrade all packages
+      ansible.builtin.apt:
+        upgrade: dist
+        update_cache: true
+        lock_timeout: 600
+
+    - name: Check if a reboot is required
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: reboot_required
+
+    - name: Reboot now (the default user can still log back in)
+      ansible.builtin.reboot:
+        reboot_timeout: 600
+      when: reboot_required.stat.exists
+
+    - name: Drop the old SSH connection after the reboot
+      ansible.builtin.meta: reset_connection
+
+    - name: Wait until the server accepts connections again
+      ansible.builtin.wait_for_connection:
+        delay: 5
+        timeout: 300
+
+    - name: Wait until boot-time jobs are done
+      ansible.builtin.command: systemctl is-system-running --wait
+      changed_when: false
+      failed_when: false
+
     - name: Install base packages
       ansible.builtin.apt:
         name: [ufw, fail2ban, unattended-upgrades]
-        update_cache: true
+        lock_timeout: 600
 
+    - name: Turn on daily automatic security updates
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Unattended-Upgrade "1";
+        mode: "0644"
+
+    # ---------- Identity ----------
     - name: Set timezone
       community.general.timezone:
         name: Asia/Jakarta
@@ -38,6 +82,7 @@
         regexp: '^127\.0\.1\.1\s'
         line: "127.0.1.1 {{ vps_hostname }}"
 
+    # ---------- Admin user ----------
     - name: Create the admin user with sudo
       ansible.builtin.user:
         name: "{{ admin_user }}"
@@ -51,6 +96,12 @@
         user: "{{ admin_user }}"
         key: "{{ ssh_pub_key }}"
         exclusive: true
+
+    # ---------- Firewall and brute-force protection ----------
+    - name: Allow outgoing traffic by default
+      community.general.ufw:
+        policy: allow
+        direction: outgoing
 
     - name: Allow SSH, HTTP and HTTPS
       community.general.ufw:
@@ -71,6 +122,7 @@
         enabled: true
         state: started
 
+    # ---------- SSH hardening ----------
     - name: Harden SSH (no root, no passwords)
       ansible.builtin.copy:
         dest: /etc/ssh/sshd_config.d/99-hardening.conf
@@ -81,6 +133,20 @@
         mode: "0644"
       notify: Restart ssh
 
+    - name: Apply the SSH hardening now
+      ansible.builtin.meta: flush_handlers
+
+    - name: Check the admin user can log in with the key before closing the default account
+      ansible.builtin.command: >
+        ssh -i {{ ansible_ssh_private_key_file }}
+        -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=10
+        -o StrictHostKeyChecking=accept-new
+        {{ admin_user }}@{{ ansible_host }} true
+      delegate_to: localhost
+      become: false
+      changed_when: false
+
+    # ---------- Close the provider's default account ----------
     - name: Remove the default user's SSH keys
       ansible.builtin.file:
         path: "/home/{{ default_user }}/.ssh/authorized_keys"
@@ -92,7 +158,13 @@
         password_lock: true
 
   handlers:
-    - name: Restart ssh
+    - name: Validate the SSH configuration
+      ansible.builtin.command: sshd -t
+      changed_when: false
+      listen: Restart ssh
+
+    - name: Restart the SSH service
       ansible.builtin.systemd:
         name: ssh
         state: restarted
+      listen: Restart ssh
