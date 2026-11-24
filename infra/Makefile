@@ -3,13 +3,9 @@ envget = $(shell [ -f $(ENV_FILE) ] && sed -n 's/^$(1)=//p' $(ENV_FILE) | tr -d 
 
 VM							?= $(call envget,VM_HOSTNAME)
 USER_  						?= $(call envget,ADMIN_USER)
-CPUS 						?= 2
-MEM       					?= 6G
-DISK      					?= 20G
 IMAGE     					?= 24.04
 TEMPLATE  					?= tofu/cloud-init.tpl.yaml
 RENDERED  					?= tofu/cloud-init.rendered.yaml
-SNAP      					?= clean
 SSH_PRIVATE_KEY_PATH		?= $(call envget,SSH_PRIVATE_KEY_PATH)
 VM_IP      					= $$(multipass list --format csv | awk -F, '$$1=="$(VM)"{print $$3}')
 
@@ -17,8 +13,8 @@ VM_IP      					= $$(multipass list --format csv | awk -F, '$$1=="$(VM)"{print $
 .PHONY: help config render \
   vm-up vm-ip vm-ssh vm-stop vm-start vm-status vm-snapshot vm-snapshots vm-restore vm-down vm-inventory vm-ansible
 
-config: ## Show the local VM settings make will use
-	@echo "VM=$(VM) CPUS=$(CPUS) MEM=$(MEM) DISK=$(DISK) IMAGE=$(IMAGE) USER=$(USER_)"
+# config: ## Show the local VM settings make will use
+# 	@echo "VM=$(VM) CPUS=$(CPUS) MEM=$(MEM) DISK=$(DISK) IMAGE=$(IMAGE) USER=$(USER_)"
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  make %-14s %s\n", $$1, $$2}'
