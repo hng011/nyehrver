@@ -1,3 +1,4 @@
+{{- $host := .Values.host | default (printf "%s.%s" .Release.Name .Values.domain) }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -7,10 +8,10 @@ metadata:
 spec:
   ingressClassName: traefik
   tls:
-    - hosts: [{{ required "host is required" .Values.host }}]
+    - hosts: [{{ $host }}]
       secretName: {{ .Release.Name }}-tls
   rules:
-    - host: {{ .Values.host }}
+    - host: {{ $host }}
       http:
         paths:
           - path: /

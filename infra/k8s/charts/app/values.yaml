@@ -5,6 +5,7 @@ replicas: 2
 port: 8000
 healthPath: /healthz
 host: ""
+domain: kaktus.foo
 certIssuer: letsencrypt-prod
 env: {}
 resources:
