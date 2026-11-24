@@ -12,6 +12,9 @@ on:
       namespace:
         type: string
         default: ""
+      replicas:
+        type: number
+        default: 1
     secrets:
       INFRA_TOKEN:
         required: true
@@ -60,6 +63,9 @@ jobs:
           EOF
           if [ -n "${{ inputs.namespace }}" ]; then
             echo "namespace: ${{ inputs.namespace }}" >> $FILE
+          fi
+          if [ "${{ inputs.replicas }}" -gt 0 ]; then
+            echo "replicas: ${{ inputs.replicas }}" >> $FILE
           fi
           cat $FILE
           git config user.name github-actions
