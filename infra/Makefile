@@ -11,7 +11,7 @@ VM_IP      					= $$(multipass list --format csv | awk -F, '$$1=="$(VM)"{print $
 
 
 .PHONY: help config render \
-  vm-up vm-ip vm-ssh vm-stop vm-start vm-status vm-snapshot vm-snapshots vm-restore vm-down vm-inventory vm-ansible
+  vm-up vm-ip vm-ssh vm-stop vm-start vm-status vm-snapshot vm-snapshots vm-restore vm-down vm-inventory vm-ansible vm-ping vm-k3s vm-logs
 
 # config: ## Show the local VM settings make will use
 # 	@echo "VM=$(VM) CPUS=$(CPUS) MEM=$(MEM) DISK=$(DISK) IMAGE=$(IMAGE) USER=$(USER_)"
@@ -53,8 +53,11 @@ vm-restore: ## Roll back: make vm-restore SNAP=after-phase2
 vm-down: ## Delete the local VM and free its disk
 	multipass delete --purge $(VM)
 vm-inventory: ## Write the Ansible inventory for the local VM
-	@printf "[k8s]\n$(VM) ansible_host=%s ansible_user=$(USER_)\n" "$(VM_IP)" > ansible/inventory.local.ini
-vm-ansible: vm-inventory ## Run the playbook against the local VM
-	ansible-playbook -i ansible/inventory.local.ini ansible/site.yml --ask-become-pass
+	@printf "[k3s]\n$(VM) ansible_host=%s ansible_user=$(USER_) ansible_ssh_private_key_file=$(SSH_PRIVATE_KEY_PATH) ansible_ssh_common_args='-o IdentitiesOnly=yes'\n" "$(VM_IP)" > ansible/inventory.local.ini
+	@cat ansible/inventory.local.ini
+vm-ping: vm-inventory ## Check Ansible can reach the local VM
+	cd ansible && ansible k3s -m ping
+vm-k3s: vm-inventory ## Install k3s on the local VM with Ansible
+	cd ansible && ansible-playbook k3s.yaml --ask-become-pass
 vm-logs:
 	@multipass exec $(VM) -- sudo tail -f /var/log/cloud-init-output.log

@@ -1,0 +1,68 @@
+- name: Install a single-node k3s server
+  hosts: k3s
+  become: true
+  vars:
+    k3s_version: v1.37.2+k3s1 
+    pod_cidr: 10.42.0.0/16
+    service_cidr: 10.43.0.0/16
+    admin_user: "{{ ansible_user }}"
+
+  pre_tasks:
+    - name: Prepare Ansible's temp folder for root
+      ansible.builtin.raw: install -d -m 0700 /root/.ansible/tmp
+      changed_when: false
+
+  tasks:
+    - name: Allow pod and service networks through ufw
+      community.general.ufw:
+        rule: allow
+        from_ip: "{{ item }}"
+      loop:
+        - "{{ pod_cidr }}"
+        - "{{ service_cidr }}"
+
+    - name: Check which k3s version is installed
+      ansible.builtin.command: k3s --version
+      register: k3s_installed
+      changed_when: false
+      failed_when: false
+
+    - name: Install k3s (only if missing or a different version)
+      ansible.builtin.shell: >
+        curl -sfL https://get.k3s.io |
+        INSTALL_K3S_VERSION={{ k3s_version }} sh -s - server
+        --cluster-cidr {{ pod_cidr }}
+        --service-cidr {{ service_cidr }}
+      when: k3s_version not in (k3s_installed.stdout | default(''))
+
+    - name: Wait until the node is Ready
+      ansible.builtin.command: k3s kubectl wait --for=condition=Ready node --all --timeout=10s
+      register: node_ready
+      until: node_ready.rc == 0
+      retries: 30
+      delay: 5
+      changed_when: false
+
+    - name: Create ~/.kube for the admin user
+      ansible.builtin.file:
+        path: "/home/{{ admin_user }}/.kube"
+        state: directory
+        owner: "{{ admin_user }}"
+        group: "{{ admin_user }}"
+        mode: "0700"
+
+    - name: Give the admin user kubectl access
+      ansible.builtin.copy:
+        src: /etc/rancher/k3s/k3s.yaml
+        dest: "/home/{{ admin_user }}/.kube/config"
+        remote_src: true
+        owner: "{{ admin_user }}"
+        group: "{{ admin_user }}"
+        mode: "0600"
+
+    - name: Make kubectl use the admin user's kubeconfig
+      ansible.builtin.lineinfile:
+        path: "/home/{{ admin_user }}/.bashrc"
+        line: "export KUBECONFIG=$HOME/.kube/config"
+        owner: "{{ admin_user }}"
+        group: "{{ admin_user }}"
