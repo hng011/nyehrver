@@ -10,7 +10,7 @@
     domain: "{{ lookup('env', 'DOMAIN') }}"
     acme_email: "{{ lookup('env', 'ACME_EMAIL') }}"
     argocd_host: "argocd.{{ domain }}"
-    cert_issuer: letsencrypt-staging   # switch to letsencrypt-prod in Step 12
+    cert_issuer: letsencrypt-prod
     pod_cidr: 10.42.0.0/16
     service_cidr: 10.43.0.0/16
     admin_user: "{{ ansible_user }}"
@@ -143,17 +143,30 @@
       register: issuers
       changed_when: "'configured' in issuers.stdout or 'created' in issuers.stdout"
 
+    - name: Argo CD values
+      ansible.builtin.copy:
+        dest: /root/argocd-values.yaml
+        mode: "0600"
+        content: |
+          global:
+            domain: {{ argocd_host }}
+          configs:
+            params:
+              server.insecure: true
+          server:
+            ingress:
+              enabled: true
+              ingressClassName: traefik
+              tls: true
+              annotations:
+                cert-manager.io/cluster-issuer: {{ cert_issuer }}
+
     - name: Argo CD
       ansible.builtin.command: >
         helm upgrade --install argocd argo/argo-cd
         --namespace argocd --create-namespace
         --version {{ argocd_chart_version }}
-        --set global.domain={{ argocd_host }}
-        --set configs.params.server\.insecure=true
-        --set server.ingress.enabled=true
-        --set server.ingress.ingressClassName=traefik
-        --set server.ingress.tls=true
-        --set server.ingress.annotations.cert-manager\.io/cluster-issuer={{ cert_issuer }}
+        -f /root/argocd-values.yaml
         --wait --timeout 10m
       environment: { KUBECONFIG: "{{ kubeconfig }}" }
 
