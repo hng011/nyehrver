@@ -15,6 +15,12 @@ on:
       env_secret:
         type: string
         default: ""
+      seal_env:
+        type: boolean
+        default: false
+      sealing_cert:
+        type: string
+        default: ""
       memory_limit:
         type: string
         default: ""
@@ -22,6 +28,18 @@ on:
         type: number
         default: 1
     secrets:
+      ADMIN_USER:
+        required: false
+      ADMIN_PASS:
+        required: false
+      OPENAI_BASE_URL:
+        required: false
+      OPENAI_API_KEY:
+        required: false
+      OPENAI_MODEL:
+        required: false
+      ALLOW_DM:
+        required: false
       INFRA_TOKEN:
         required: true
 
@@ -57,6 +75,39 @@ jobs:
           token: ${{ secrets.INFRA_TOKEN }}
           path: nyehrver
 
+      - name: Install kubeseal
+        if: inputs.seal_env
+        run: GOBIN="$RUNNER_TEMP" go install github.com/bitnami-labs/sealed-secrets/cmd/kubeseal@v0.41.2
+
+      - name: Encrypt runtime settings
+        if: inputs.seal_env
+        env:
+          CERT: ${{ inputs.sealing_cert }}
+          SECRET_NAME: ${{ inputs.env_secret }}
+          NAMESPACE: ${{ inputs.namespace }}
+          ADMIN_USER: ${{ secrets.ADMIN_USER }}
+          ADMIN_PASS: ${{ secrets.ADMIN_PASS }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          ALLOW_DM: ${{ secrets.ALLOW_DM }}
+        run: |
+          set -euo pipefail
+          umask 077
+          dir=$(mktemp -d)
+          trap 'rm -rf "$dir"' EXIT
+          printf '%s\n' "${CERT:?Set SEALED_SECRETS_CERT to the controller public certificate}" > "$dir/cert.pem"
+          args=()
+          for key in ADMIN_USER ADMIN_PASS OPENAI_BASE_URL OPENAI_API_KEY OPENAI_MODEL ALLOW_DM; do
+            if [[ "$key" == ALLOW_DM && -z "${!key}" ]]; then continue; fi
+            [[ -n "${!key}" ]] || { echo "Missing $key"; exit 1; }
+            printf '%s' "${!key}" > "$dir/$key"
+            args+=("--from-file=$key=$dir/$key")
+          done
+          kubectl create secret generic "$SECRET_NAME" -n "$NAMESPACE" "${args[@]}" --dry-run=client -o json |
+            "$RUNNER_TEMP/kubeseal" --cert "$dir/cert.pem" --format json |
+            jq -e '{encryptedData: .spec.encryptedData}' > "$RUNNER_TEMP/encrypted-values.json"
+
       - name: Update values and push
         env:
           ENV_SECRET: ${{ inputs.env_secret }}
@@ -78,7 +129,9 @@ jobs:
           fi
           if [ -n "$ENV_SECRET" ]; then echo "envSecret: $ENV_SECRET" >> "$FILE"; fi
           if [ -n "$MEMORY_LIMIT" ]; then printf 'resources:\n  limits:\n    memory: %s\n' "$MEMORY_LIMIT" >> "$FILE"; fi
-          cat $FILE
+          if [ -f "$RUNNER_TEMP/encrypted-values.json" ]; then
+            printf 'encryptedData: %s\n' "$(jq -c .encryptedData "$RUNNER_TEMP/encrypted-values.json")" >> "$FILE"
+          fi
           git config user.name github-actions
           git config user.email github-actions@users.noreply.github.com
           git add .

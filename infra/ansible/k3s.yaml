@@ -171,6 +171,11 @@
       environment: { KUBECONFIG: "{{ kubeconfig }}" }
 
     # GitOps entry point
+    - name: Install the Sealed Secrets controller and CRD
+      ansible.builtin.command: >-
+        k3s kubectl apply --server-side
+        -f https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.41.2/controller.yaml
+
     - name: Copy the ApplicationSet
       ansible.builtin.copy:
         src: ../k8s/appset.yaml
