@@ -27,6 +27,9 @@ on:
       replicas:
         type: number
         default: 1
+      revision_history_limit:
+        type: number
+        default: 0
       persistence_size:
         type: string
         default: ""
@@ -140,6 +143,9 @@ jobs:
           fi
           if [ "${{ inputs.replicas }}" -gt 0 ]; then
             echo "replicas: ${{ inputs.replicas }}" >> $FILE
+          fi
+          if [ "${{ inputs.revision_history_limit }}" -gt 0 ]; then
+            echo "revisionHistoryLimit: ${{ inputs.revision_history_limit }}" >> $FILE
           fi
           if [ -n "$ENV_SECRET" ]; then echo "envSecret: $ENV_SECRET" >> "$FILE"; fi
           if [ -n "$PERSISTENCE_SIZE" ]; then printf 'persistence:\n  enabled: true\n  size: %s\n' "$PERSISTENCE_SIZE" >> "$FILE"; fi
