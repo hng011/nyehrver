@@ -4,12 +4,25 @@ metadata:
   name: {{ .Release.Name }}
 spec:
   replicas: {{ .Values.replicas }}
+  {{- if .Values.persistence.enabled }}
+  # The volume is ReadWriteOnce and holds a live session; two pods must never overlap.
+  strategy:
+    type: Recreate
+  {{- end }}
   selector:
     matchLabels: { app: {{ .Release.Name }} }
   template:
     metadata:
       labels: { app: {{ .Release.Name }} }
     spec:
+      {{- if .Values.persistence.enabled }}
+      securityContext:
+        fsGroup: 1000
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-data
+      {{- end }}
       containers:
         - name: {{ .Release.Name }}
           image: "{{ required "image.repository is required" .Values.image.repository }}:{{ required "image.tag is required" .Values.image.tag }}"
@@ -30,13 +43,27 @@ spec:
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
+          {{- if .Values.persistence.enabled }}
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+          {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          {{- /* Empty healthPath = TCP probe, for apps whose every route needs auth. */}}
           readinessProbe:
+            {{- if .Values.healthPath }}
             httpGet: { path: {{ .Values.healthPath }}, port: {{ .Values.port }} }
+            {{- else }}
+            tcpSocket: { port: {{ .Values.port }} }
+            {{- end }}
             initialDelaySeconds: 3
           livenessProbe:
+            {{- if .Values.healthPath }}
             httpGet: { path: {{ .Values.healthPath }}, port: {{ .Values.port }} }
+            {{- else }}
+            tcpSocket: { port: {{ .Values.port }} }
+            {{- end }}
             initialDelaySeconds: 10
           securityContext:
             allowPrivilegeEscalation: false

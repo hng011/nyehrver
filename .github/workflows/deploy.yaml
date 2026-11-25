@@ -27,6 +27,12 @@ on:
       replicas:
         type: number
         default: 1
+      persistence_size:
+        type: string
+        default: ""
+      tcp_probe:
+        type: boolean
+        default: false
     secrets:
       SEALED_SECRETS_CERT:
         required: false
@@ -118,6 +124,8 @@ jobs:
         env:
           ENV_SECRET: ${{ inputs.env_secret }}
           MEMORY_LIMIT: ${{ inputs.memory_limit }}
+          PERSISTENCE_SIZE: ${{ inputs.persistence_size }}
+          TCP_PROBE: ${{ inputs.tcp_probe }}
         working-directory: nyehrver
         run: |
           FILE=infra/k8s/apps/${{ inputs.name }}.yaml
@@ -134,6 +142,8 @@ jobs:
             echo "replicas: ${{ inputs.replicas }}" >> $FILE
           fi
           if [ -n "$ENV_SECRET" ]; then echo "envSecret: $ENV_SECRET" >> "$FILE"; fi
+          if [ -n "$PERSISTENCE_SIZE" ]; then printf 'persistence:\n  enabled: true\n  size: %s\n' "$PERSISTENCE_SIZE" >> "$FILE"; fi
+          if [ "$TCP_PROBE" = true ]; then echo 'healthPath: ""' >> "$FILE"; fi
           if [ -n "$MEMORY_LIMIT" ]; then printf 'resources:\n  limits:\n    memory: %s\n' "$MEMORY_LIMIT" >> "$FILE"; fi
           if [ -f "$RUNNER_TEMP/encrypted-values.json" ]; then
             printf 'encryptedData: %s\n' "$(jq -c .encryptedData "$RUNNER_TEMP/encrypted-values.json")" >> "$FILE"

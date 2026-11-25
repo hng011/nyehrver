@@ -1,0 +1,13 @@
+{{- if .Values.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-data
+spec:
+  accessModes: [ReadWriteOnce]
+  # k3s default class: stores on the VPS disk and survives redeploys.
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+{{- end }}

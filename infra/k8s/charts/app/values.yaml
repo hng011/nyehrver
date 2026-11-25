@@ -11,3 +11,7 @@ env: {}
 resources:
   requests: { cpu: 20m, memory: 64Mi }
   limits:   { memory: 128Mi }
+persistence:
+  enabled: false
+  size: 1Gi
+  mountPath: /data
