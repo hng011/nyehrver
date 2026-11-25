@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/hng011/bot-liar
-  tag: "bfa28ff"
+  tag: "9cb56c3"
 port: 8000
 namespace: my-bot-liar
 replicas: 1
