@@ -4,6 +4,8 @@ metadata:
   name: {{ .Release.Name }}
 spec:
   replicas: {{ .Values.replicas }}
+  # Old ReplicaSets kept for rollback (Kubernetes default is 10).
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
   {{- if .Values.persistence.enabled }}
   # The volume is ReadWriteOnce and holds a live session; two pods must never overlap.
   strategy:
