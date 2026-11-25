@@ -77,7 +77,11 @@ jobs:
 
       - name: Install kubeseal
         if: inputs.seal_env
-        run: GOBIN="$RUNNER_TEMP" go install github.com/bitnami-labs/sealed-secrets/cmd/kubeseal@v0.41.2
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl -fsSL --retry 3 -o kubeseal.tar.gz https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.41.2/kubeseal-0.41.2-linux-amd64.tar.gz
+          echo '666b5db6788ad1dedb56e2d97064e1cc3779aa77bbd6f4b56b62beeb1941ed79  kubeseal.tar.gz' | sha256sum -c -
+          tar -xzf kubeseal.tar.gz kubeseal
 
       - name: Encrypt runtime settings
         if: inputs.seal_env
