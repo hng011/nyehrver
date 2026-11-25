@@ -12,6 +12,12 @@ on:
       namespace:
         type: string
         default: ""
+      env_secret:
+        type: string
+        default: ""
+      memory_limit:
+        type: string
+        default: ""
       replicas:
         type: number
         default: 1
@@ -52,6 +58,9 @@ jobs:
           path: nyehrver
 
       - name: Update values and push
+        env:
+          ENV_SECRET: ${{ inputs.env_secret }}
+          MEMORY_LIMIT: ${{ inputs.memory_limit }}
         working-directory: nyehrver
         run: |
           FILE=infra/k8s/apps/${{ inputs.name }}.yaml
@@ -67,6 +76,8 @@ jobs:
           if [ "${{ inputs.replicas }}" -gt 0 ]; then
             echo "replicas: ${{ inputs.replicas }}" >> $FILE
           fi
+          if [ -n "$ENV_SECRET" ]; then echo "envSecret: $ENV_SECRET" >> "$FILE"; fi
+          if [ -n "$MEMORY_LIMIT" ]; then printf 'resources:\n  limits:\n    memory: %s\n' "$MEMORY_LIMIT" >> "$FILE"; fi
           cat $FILE
           git config user.name github-actions
           git config user.email github-actions@users.noreply.github.com

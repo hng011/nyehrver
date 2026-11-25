@@ -15,6 +15,11 @@ spec:
           image: "{{ required "image.repository is required" .Values.image.repository }}:{{ required "image.tag is required" .Values.image.tag }}"
           ports:
             - containerPort: {{ .Values.port }}
+          {{- with .Values.envSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ . | quote }}
+          {{- end }}
           env:
             - name: APP_VERSION
               value: {{ .Values.image.tag | quote }}
