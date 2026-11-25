@@ -28,6 +28,8 @@ on:
         type: number
         default: 1
     secrets:
+      SEALED_SECRETS_CERT:
+        required: false
       ADMIN_USER:
         required: false
       ADMIN_PASS:
@@ -86,7 +88,7 @@ jobs:
       - name: Encrypt runtime settings
         if: inputs.seal_env
         env:
-          CERT: ${{ inputs.sealing_cert }}
+          CERT: ${{ secrets.SEALED_SECRETS_CERT || inputs.sealing_cert }}
           SECRET_NAME: ${{ inputs.env_secret }}
           NAMESPACE: ${{ inputs.namespace }}
           ADMIN_USER: ${{ secrets.ADMIN_USER }}
