@@ -3,8 +3,12 @@ kind: Service
 metadata:
   name: {{ .Release.Name }}
 spec:
+  {{- with .Values.serviceType }}
+  # LoadBalancer = k3s servicelb publishes servicePort on the node's public IP.
+  type: {{ . }}
+  {{- end }}
   {{- with .Values.clusterIP }}
-  # Fixed IP for host-level forwarders (e.g. Tailscale) that can't use cluster DNS.
+  # Immutable once set; kept so existing Services keep syncing.
   clusterIP: {{ . }}
   {{- end }}
   selector: { app: {{ .Release.Name }} }

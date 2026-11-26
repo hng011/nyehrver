@@ -17,7 +17,7 @@ SSH_OPTS              = -o IdentitiesOnly=yes
 
 .PHONY: help config render \
   vm-up vm-ip vm-ssh vm-stop vm-start vm-status vm-snapshot vm-snapshots vm-restore vm-down vm-inventory vm-ping vm-k3s vm-logs \
-  vps-bootstrap vps-inventory vps-ssh vps-k3s vps-ping vps-backup vps-backup-now vps-db vps-tailscale vps-db-secret
+  vps-bootstrap vps-inventory vps-ssh vps-k3s vps-ping vps-backup vps-backup-now vps-db vps-db-secret
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  make %-14s %s\n", $$1, $$2}'
@@ -91,9 +91,6 @@ vps-backup-now: ## Run the GCS backup on the VPS right now
 vps-db: ## Tunnel the in-cluster Postgres to localhost:$(PG_PORT) (Ctrl-C to close)
 	ssh -t -L $(PG_PORT):localhost:15432 -i $(SSH_PRIVATE_KEY_PATH) $(SSH_OPTS) $(USER_)@$(VPS_IP) \
 		sudo k3s kubectl port-forward -n postgres svc/postgres 15432:5432
-vps-tailscale: vps-inventory ## Join the VPS to Tailscale and serve Postgres on its tailnet IP:5432
-	@set -a && . ./$(ENV_FILE) && set +a && \
-		cd ansible && ansible-playbook -i inventory.vps.ini tailscale.yaml --ask-become-pass
 vps-db-secret: ## Create the Postgres secret in the cluster from POSTGRES_* in .env (no kubectl/kubeseal needed locally)
 	@test -n "$(call envget,POSTGRES_PASSWORD)" || (echo "POSTGRES_PASSWORD is missing in $(ENV_FILE)" && exit 1)
 	@grep -E '^POSTGRES_(USER|PASSWORD|DB)=' $(ENV_FILE) | tr -d "'\"" | \

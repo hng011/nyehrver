@@ -3,10 +3,12 @@ image:
   tag: "17.6-alpine"
 port: 5432
 servicePort: 5432
-# Pinned so the VPS can forward tailnet traffic here (ansible/tailscale.yaml).
+# Public on <VPS_IP>:5432, open to any IP; pg_hba below rejects non-TLS.
+serviceType: LoadBalancer
+# Set by the first deploy; clusterIP is immutable, so keep it.
 clusterIP: 10.43.54.32
 replicas: 1
-# Cluster-internal only: reached as postgres.postgres.svc.cluster.local:5432
+# In-cluster apps: postgres.postgres.svc.cluster.local:5432
 ingress:
   enabled: false
 healthPath: ""
@@ -23,3 +25,49 @@ persistence:
 resources:
   limits:
     memory: 256Mi
+args:
+  - -c
+  - ssl=on
+  - -c
+  - ssl_cert_file=/tls/tls.crt
+  - -c
+  - ssl_key_file=/tls/tls.key
+  - -c
+  - hba_file=/etc/postgres-hba/pg_hba.conf
+extraVolumes:
+  - name: tls
+    secret:
+      secretName: postgres-tls
+      # Postgres accepts a root-owned key only at 0640 or stricter.
+      defaultMode: 0640
+  - name: hba
+    configMap:
+      name: postgres-hba
+extraVolumeMounts:
+  - { name: tls, mountPath: /tls, readOnly: true }
+  - { name: hba, mountPath: /etc/postgres-hba, readOnly: true }
+extraManifests:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata: { name: postgres-hba }
+    data:
+      pg_hba.conf: |
+        # Unix socket: the image's init scripts and kubectl exec psql.
+        local     all  all            trust
+        hostssl   all  all  0.0.0.0/0  scram-sha-256
+        hostssl   all  all  ::/0       scram-sha-256
+        hostnossl all  all  0.0.0.0/0  reject
+        hostnossl all  all  ::/0       reject
+  # shortcut: self-signed cert, clients use sslmode=require (encrypted, server not verified); move to a Let's Encrypt cert on a db.<domain> name for verify-full.
+  - apiVersion: cert-manager.io/v1
+    kind: Issuer
+    metadata: { name: selfsigned }
+    spec: { selfSigned: {} }
+  - apiVersion: cert-manager.io/v1
+    kind: Certificate
+    metadata: { name: postgres-tls }
+    spec:
+      secretName: postgres-tls
+      commonName: postgres
+      duration: 87600h
+      issuerRef: { name: selfsigned, kind: Issuer }
