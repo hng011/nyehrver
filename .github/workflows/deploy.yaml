@@ -45,19 +45,7 @@ on:
     secrets:
       SEALED_SECRETS_CERT:
         required: false
-      ADMIN_USER:
-        required: false
-      ADMIN_PASS:
-        required: false
-      OPENAI_BASE_URL:
-        required: false
-      OPENAI_API_KEY:
-        required: false
-      OPENAI_MODEL:
-        required: false
-      ALLOW_DM:
-        required: false
-      # Whole dotenv to seal; when set, replaces the fixed key list below.
+      # The app's whole .env (KEY=value lines), sealed into env_secret.
       ENV_FILE:
         required: false
       # Newline-separated KEY=value docker build args.
@@ -117,12 +105,6 @@ jobs:
           CERT: ${{ secrets.SEALED_SECRETS_CERT || inputs.sealing_cert }}
           SECRET_NAME: ${{ inputs.env_secret }}
           NAMESPACE: ${{ inputs.namespace }}
-          ADMIN_USER: ${{ secrets.ADMIN_USER }}
-          ADMIN_PASS: ${{ secrets.ADMIN_PASS }}
-          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
-          ALLOW_DM: ${{ secrets.ALLOW_DM }}
           ENV_FILE: ${{ secrets.ENV_FILE }}
         run: |
           set -euo pipefail
@@ -130,19 +112,8 @@ jobs:
           dir=$(mktemp -d)
           trap 'rm -rf "$dir"' EXIT
           printf '%s\n' "${CERT:?Set SEALED_SECRETS_CERT to the controller public certificate}" > "$dir/cert.pem"
-          args=()
-          if [[ -n "$ENV_FILE" ]]; then
-            printf '%s\n' "$ENV_FILE" > "$dir/env"
-            args+=("--from-env-file=$dir/env")
-          else
-          for key in ADMIN_USER ADMIN_PASS OPENAI_BASE_URL OPENAI_API_KEY OPENAI_MODEL ALLOW_DM; do
-            if [[ "$key" == ALLOW_DM && -z "${!key}" ]]; then continue; fi
-            [[ -n "${!key}" ]] || { echo "Missing $key"; exit 1; }
-            printf '%s' "${!key}" > "$dir/$key"
-            args+=("--from-file=$key=$dir/$key")
-          done
-          fi
-          kubectl create secret generic "$SECRET_NAME" -n "$NAMESPACE" "${args[@]}" --dry-run=client -o json |
+          printf '%s\n' "${ENV_FILE:?Set ENV_FILE to the app .env contents}" > "$dir/env"
+          kubectl create secret generic "$SECRET_NAME" -n "$NAMESPACE" --from-env-file="$dir/env" --dry-run=client -o json |
             "$RUNNER_TEMP/kubeseal" --cert "$dir/cert.pem" --format json |
             jq -e '{encryptedData: .spec.encryptedData}' > "$RUNNER_TEMP/encrypted-values.json"
 
