@@ -11,6 +11,8 @@ replicas: 1
 # In-cluster apps: postgres.postgres.svc.cluster.local:5432
 ingress:
   enabled: false
+# Public name (resolves via the *.kaktus.foo wildcard; Postgres isn't routed by name, so this is the name to hand out).
+host: mypg17.kaktus.foo
 healthPath: ""
 # Alpine image's postgres uid; its default USER is root.
 runAsUser: 70
@@ -68,6 +70,7 @@ extraManifests:
     metadata: { name: postgres-tls }
     spec:
       secretName: postgres-tls
-      commonName: postgres
+      commonName: mypg17.kaktus.foo
+      dnsNames: [mypg17.kaktus.foo]
       duration: 87600h
       issuerRef: { name: selfsigned, kind: Issuer }
