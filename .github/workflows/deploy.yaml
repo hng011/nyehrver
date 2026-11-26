@@ -39,6 +39,9 @@ on:
       context:
         type: string
         default: "."
+      host:
+        type: string
+        default: ""
     secrets:
       SEALED_SECRETS_CERT:
         required: false
@@ -149,6 +152,7 @@ jobs:
           MEMORY_LIMIT: ${{ inputs.memory_limit }}
           PERSISTENCE_SIZE: ${{ inputs.persistence_size }}
           TCP_PROBE: ${{ inputs.tcp_probe }}
+          HOST: ${{ inputs.host }}
         working-directory: nyehrver
         run: |
           FILE=infra/k8s/apps/${{ inputs.name }}.yaml
@@ -167,6 +171,7 @@ jobs:
           if [ "${{ inputs.revision_history_limit }}" -gt 0 ]; then
             echo "revisionHistoryLimit: ${{ inputs.revision_history_limit }}" >> $FILE
           fi
+          if [ -n "$HOST" ]; then echo "host: $HOST" >> "$FILE"; fi
           if [ -n "$ENV_SECRET" ]; then echo "envSecret: $ENV_SECRET" >> "$FILE"; fi
           if [ -n "$PERSISTENCE_SIZE" ]; then printf 'persistence:\n  enabled: true\n  size: %s\n' "$PERSISTENCE_SIZE" >> "$FILE"; fi
           if [ "$TCP_PROBE" = true ]; then echo 'healthPath: ""' >> "$FILE"; fi
