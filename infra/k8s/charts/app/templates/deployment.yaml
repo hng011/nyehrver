@@ -70,3 +70,7 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
+            {{- with .Values.runAsUser }}
+            # For images whose default USER is root (e.g. postgres).
+            runAsUser: {{ . }}
+            {{- end }}

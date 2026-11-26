@@ -1,0 +1,60 @@
+- name: Backup of persistent data to GCS every 3 days
+  hosts: k3s
+  become: true
+
+  vars:
+    bucket: "{{ lookup('env', 'GCS_BACKUP_BUCKET') }}"
+    sa_key_path: "{{ lookup('env', 'GCS_SA_KEY_PATH') }}"
+
+  pre_tasks:
+    - name: GCS_BACKUP_BUCKET and GCS_SA_KEY_PATH are set
+      ansible.builtin.assert:
+        that:
+          - bucket | length > 0
+          - sa_key_path | length > 0
+        fail_msg: "Set GCS_BACKUP_BUCKET and GCS_SA_KEY_PATH in .env and run through make"
+
+  tasks:
+    - name: rclone
+      ansible.builtin.apt:
+        name: rclone
+        update_cache: true
+
+    - name: Service account key (write-only on the bucket)
+      ansible.builtin.copy:
+        src: "{{ sa_key_path }}"
+        dest: /root/gcs-backup.json
+        mode: "0600"
+
+    - name: Backup script
+      ansible.builtin.copy:
+        dest: /usr/local/sbin/nyehrver-backup
+        mode: "0700"
+        content: |
+          #!/bin/bash
+          # Uploads every PVC (k3s local-path storage) and the Sealed Secrets key.
+          # The key decrypts every SealedSecret in git: without it a rebuilt cluster can't read app secrets.
+          set -euo pipefail
+          export RCLONE_CONFIG_GCS_TYPE="google cloud storage"
+          export RCLONE_CONFIG_GCS_SERVICE_ACCOUNT_FILE=/root/gcs-backup.json
+          export RCLONE_CONFIG_GCS_BUCKET_POLICY_ONLY=true
+          dir=$(mktemp -d)
+          trap 'rm -rf "$dir"' EXIT
+          dest="gcs:{{ bucket }}/$(date -u +%Y-%m-%dT%H%MZ)"
+          k3s kubectl -n kube-system get secret -l sealedsecrets.bitnami.com/sealed-secrets-key -o yaml > "$dir/sealed-secrets-key.yaml"
+          # shortcut: copies live files (SQLite WAL, Qdrant segments) without pausing apps; fine at this write rate, use app-level snapshots if data gets busy.
+          tar -czf "$dir/storage.tar.gz" -C /var/lib/rancher/k3s storage
+          # Write-only role: no read/list, so skip rclone's existence checks.
+          for f in "$dir"/*; do
+            rclone copyto --no-check-dest --gcs-no-check-bucket "$f" "$dest/$(basename "$f")"
+          done
+          echo "backup uploaded to $dest"
+
+    # Days 1,4,7,…,31 of each month: the month boundary gives a 1–2 day gap.
+    - name: Run every 3 days at 03:00 server time
+      ansible.builtin.cron:
+        name: nyehrver-backup
+        day: "*/3"
+        hour: "3"
+        minute: "0"
+        job: /usr/local/sbin/nyehrver-backup >> /var/log/nyehrver-backup.log 2>&1

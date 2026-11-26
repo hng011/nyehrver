@@ -1,0 +1,25 @@
+image:
+  repository: postgres
+  tag: "17.6-alpine"
+port: 5432
+servicePort: 5432
+# Pinned so the VPS can forward tailnet traffic here (ansible/tailscale.yaml).
+clusterIP: 10.43.54.32
+replicas: 1
+# Cluster-internal only: reached as postgres.postgres.svc.cluster.local:5432
+ingress:
+  enabled: false
+healthPath: ""
+# Alpine image's postgres uid; its default USER is root.
+runAsUser: 70
+# Created out of git by `make vps-db-secret` (no encryptedData here).
+envSecret: postgres-env
+env:
+  PGDATA: /var/lib/postgresql/data/pgdata
+persistence:
+  enabled: true
+  size: 10Gi
+  mountPath: /var/lib/postgresql/data
+resources:
+  limits:
+    memory: 256Mi

@@ -1,0 +1,82 @@
+- name: Tailscale with Postgres reachable on the tailnet only
+  hosts: k3s
+  become: true
+
+  vars:
+    authkey: "{{ lookup('env', 'TAILSCALE_AUTHKEY') }}"
+    # Must match clusterIP in k8s/apps/postgres.yaml.
+    postgres_cluster_ip: 10.43.54.32
+
+  tasks:
+    - name: Tailscale
+      ansible.builtin.shell: curl -fsSL https://tailscale.com/install.sh | sh
+      args:
+        creates: /usr/bin/tailscale
+
+    - name: Tailnet status
+      ansible.builtin.command: tailscale ip -4
+      register: ts_ip
+      changed_when: false
+      failed_when: false
+
+    - name: Join the tailnet
+      when: ts_ip.rc != 0
+      block:
+        - name: TAILSCALE_AUTHKEY is set
+          ansible.builtin.assert:
+            that: authkey | length > 0
+            fail_msg: "Set TAILSCALE_AUTHKEY in .env and run through make"
+
+        - name: tailscale up
+          ansible.builtin.command: tailscale up --authkey={{ authkey }} --hostname={{ inventory_hostname }}
+          no_log: true
+
+        - name: Tailnet IP
+          ansible.builtin.command: tailscale ip -4
+          register: ts_ip
+          changed_when: false
+
+    - name: socat
+      ansible.builtin.apt:
+        name: socat
+        update_cache: true
+
+    # Binds only the tailnet IP, so 5432 stays closed on the public interface.
+    - name: Postgres forwarder
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/tailnet-postgres.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Forward tailnet :5432 to in-cluster Postgres
+          After=tailscaled.service k3s.service
+          Wants=tailscaled.service
+
+          [Service]
+          ExecStart=/usr/bin/socat TCP-LISTEN:5432,bind={{ ts_ip.stdout_lines[0] }},fork,reuseaddr TCP:{{ postgres_cluster_ip }}:5432
+          Restart=always
+          RestartSec=5
+          DynamicUser=true
+
+          [Install]
+          WantedBy=multi-user.target
+      register: unit
+
+    - name: Forwarder running
+      ansible.builtin.systemd:
+        name: tailnet-postgres
+        enabled: true
+        state: "{{ 'restarted' if unit.changed else 'started' }}"
+        daemon_reload: true
+
+    - name: Allow Postgres from the tailnet only
+      community.general.ufw:
+        rule: allow
+        interface: tailscale0
+        direction: in
+        port: "5432"
+        proto: tcp
+
+    - name: Connection info
+      ansible.builtin.debug:
+        msg: "Postgres on the tailnet: {{ ts_ip.stdout_lines[0] }}:5432 (or {{ inventory_hostname }}:5432 with MagicDNS)"
