@@ -1,3 +1,4 @@
+{{- if .Values.ingress.enabled }}
 {{- $host := .Values.host | default (printf "%s.%s" .Release.Name .Values.domain) }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -20,3 +21,4 @@ spec:
               service:
                 name: {{ .Release.Name }}
                 port: { number: 80 }
+{{- end }}

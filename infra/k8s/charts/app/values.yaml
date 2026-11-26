@@ -5,6 +5,8 @@ replicas: 1
 revisionHistoryLimit: 5
 port: 8000
 healthPath: /healthz
+ingress:
+  enabled: true
 host: ""
 domain: kaktus.foo
 certIssuer: letsencrypt-prod

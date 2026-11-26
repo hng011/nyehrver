@@ -36,6 +36,9 @@ on:
       tcp_probe:
         type: boolean
         default: false
+      context:
+        type: string
+        default: "."
     secrets:
       SEALED_SECRETS_CERT:
         required: false
@@ -50,6 +53,12 @@ on:
       OPENAI_MODEL:
         required: false
       ALLOW_DM:
+        required: false
+      # Whole dotenv to seal; when set, replaces the fixed key list below.
+      ENV_FILE:
+        required: false
+      # Newline-separated KEY=value docker build args.
+      BUILD_ARGS:
         required: false
       INFRA_TOKEN:
         required: true
@@ -72,10 +81,15 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
+        env:
+          BUILD_ARGS: ${{ secrets.BUILD_ARGS }}
+          CONTEXT: ${{ inputs.context }}
         run: |
           IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ inputs.name }}
           TAG=${GITHUB_SHA::7}
-          docker build --platform linux/amd64 -t $IMAGE:$TAG .
+          args=()
+          while IFS= read -r line; do [ -n "$line" ] && args+=(--build-arg "$line"); done <<< "$BUILD_ARGS"
+          docker build --platform linux/amd64 "${args[@]}" -t $IMAGE:$TAG "$CONTEXT"
           docker push $IMAGE:$TAG
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
           echo "TAG=$TAG" >> $GITHUB_ENV
@@ -106,6 +120,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
           ALLOW_DM: ${{ secrets.ALLOW_DM }}
+          ENV_FILE: ${{ secrets.ENV_FILE }}
         run: |
           set -euo pipefail
           umask 077
@@ -113,12 +128,17 @@ jobs:
           trap 'rm -rf "$dir"' EXIT
           printf '%s\n' "${CERT:?Set SEALED_SECRETS_CERT to the controller public certificate}" > "$dir/cert.pem"
           args=()
+          if [[ -n "$ENV_FILE" ]]; then
+            printf '%s\n' "$ENV_FILE" > "$dir/env"
+            args+=("--from-env-file=$dir/env")
+          else
           for key in ADMIN_USER ADMIN_PASS OPENAI_BASE_URL OPENAI_API_KEY OPENAI_MODEL ALLOW_DM; do
             if [[ "$key" == ALLOW_DM && -z "${!key}" ]]; then continue; fi
             [[ -n "${!key}" ]] || { echo "Missing $key"; exit 1; }
             printf '%s' "${!key}" > "$dir/$key"
             args+=("--from-file=$key=$dir/$key")
           done
+          fi
           kubectl create secret generic "$SECRET_NAME" -n "$NAMESPACE" "${args[@]}" --dry-run=client -o json |
             "$RUNNER_TEMP/kubeseal" --cert "$dir/cert.pem" --format json |
             jq -e '{encryptedData: .spec.encryptedData}' > "$RUNNER_TEMP/encrypted-values.json"

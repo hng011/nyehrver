@@ -1,0 +1,18 @@
+image:
+  repository: qdrant/qdrant
+  tag: "v1.20.2-unprivileged"
+port: 6333
+replicas: 1
+# Cluster-internal only: reached as http://qdrant.qdrant.svc.cluster.local
+ingress:
+  enabled: false
+env:
+  QDRANT__STORAGE__STORAGE_PATH: /data/storage
+  QDRANT__STORAGE__SNAPSHOTS_PATH: /data/snapshots
+  QDRANT__TELEMETRY_DISABLED: "true"
+persistence:
+  enabled: true
+  size: 3Gi
+resources:
+  limits:
+    memory: 256Mi
