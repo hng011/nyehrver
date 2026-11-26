@@ -1,0 +1,8 @@
+image:
+  repository: ghcr.io/hng011/nyeh-front
+  tag: "10a0e65"
+port: 8080
+namespace: nyeh
+replicas: 1
+host: hng.kaktus.foo
+healthPath: ""
