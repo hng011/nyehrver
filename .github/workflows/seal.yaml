@@ -2,7 +2,12 @@ name: Seal app env
 
 # For apps on stock images (no build): seals the <APP>_ENV repo secret
 # into infra/k8s/apps/<app>.yaml as encryptedData and pushes; Argo applies it.
+# On push: seals every app file with envSecret but no encryptedData whose
+# <APP>_ENV secret exists. Manual run: (re)seals one app, e.g. after editing its secret.
 on:
+  push:
+    branches: [main]
+    paths: ["infra/k8s/apps/*.yaml"]
   workflow_dispatch:
     inputs:
       app:
@@ -32,22 +37,38 @@ jobs:
         env:
           APP: ${{ inputs.app }}
           CERT: ${{ secrets.SEALED_SECRETS_CERT }}
-          ENV_FILE: ${{ secrets[format('{0}_ENV', inputs.app)] }}
+          SECRETS: ${{ toJSON(secrets) }}
         run: |
           set -euo pipefail
-          FILE="infra/k8s/apps/$APP.yaml"
-          test -f "$FILE" || { echo "no $FILE"; exit 1; }
           umask 077
           dir=$(mktemp -d)
           trap 'rm -rf "$dir"' EXIT
           printf '%s\n' "${CERT:?Set the SEALED_SECRETS_CERT repo secret}" > "$dir/cert.pem"
-          printf '%s\n' "${ENV_FILE:?Set the ${APP^^}_ENV repo secret to the app .env contents}" > "$dir/env"
-          data=$(kubectl create secret generic "$APP-env" -n "$APP" --from-env-file="$dir/env" --dry-run=client -o json |
-            "$RUNNER_TEMP/kubeseal" --cert "$dir/cert.pem" --format json | jq -ce .spec.encryptedData)
-          sed -i '/^encryptedData:/d' "$FILE"
-          printf 'encryptedData: %s\n' "$data" >> "$FILE"
+          if [ -n "$APP" ]; then
+            apps=$APP
+          else
+            # Unsealed apps only, so the bot's own commit doesn't reseal in a loop.
+            apps=$(grep -L '^encryptedData:' $(grep -l '^envSecret:' infra/k8s/apps/*.yaml) | xargs -rn1 basename | sed 's/\.yaml$//')
+          fi
+          sealed=
+          for app in $apps; do
+            FILE="infra/k8s/apps/$app.yaml"
+            test -f "$FILE" || { echo "no $FILE"; exit 1; }
+            name="$(echo "$app" | tr 'a-z-' 'A-Z_')_ENV"
+            jq -r --arg n "$name" '.[$n] // empty' <<< "$SECRETS" > "$dir/env"
+            if [ ! -s "$dir/env" ]; then
+              echo "::warning::skip $app: set the $name repo secret"
+              [ -n "$APP" ] && exit 1 || continue
+            fi
+            data=$(kubectl create secret generic "$app-env" -n "$app" --from-env-file="$dir/env" --dry-run=client -o json |
+              "$RUNNER_TEMP/kubeseal" --cert "$dir/cert.pem" --format json | jq -ce .spec.encryptedData)
+            sed -i '/^encryptedData:/d' "$FILE"
+            printf 'encryptedData: %s\n' "$data" >> "$FILE"
+            sealed="$sealed $app"
+          done
+          [ -n "$sealed" ] || { echo "nothing to seal"; exit 0; }
           git config user.name github-actions
           git config user.email github-actions@users.noreply.github.com
-          git add "$FILE"
-          git commit -m "seal($APP): env" || exit 0
+          git add infra/k8s/apps
+          git commit -m "seal($(echo $sealed | tr ' ' ',')): env"
           git pull --rebase && git push
