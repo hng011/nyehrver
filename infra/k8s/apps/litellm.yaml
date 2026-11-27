@@ -1,0 +1,16 @@
+image:
+  repository: ghcr.io/berriai/litellm-non_root
+  tag: "main-v1.83.14-stable"
+port: 4000
+replicas: 1
+# Public: https://litellm.kaktus.foo (API + admin UI at /ui). Every route except health needs a key.
+host: litellm.kaktus.foo
+healthPath: /health/liveliness
+# Sealed from the LITELLM_ENV repo secret by the "Seal app env" workflow.
+envSecret: litellm-env
+env:
+  # Models and provider keys are managed in the UI and stored in Postgres.
+  STORE_MODEL_IN_DB: "True"
+resources:
+  limits:
+    memory: 1Gi

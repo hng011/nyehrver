@@ -3,3 +3,4 @@
 */ansible/inventory.local.ini
 */tofu/cloud-init.rendered.yaml
 infra/ansible/inventory.*.ini
+infra/secrets/

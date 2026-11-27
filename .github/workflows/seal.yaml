@@ -1,0 +1,53 @@
+name: Seal app env
+
+# For apps on stock images (no build): seals the <APP>_ENV repo secret
+# into infra/k8s/apps/<app>.yaml as encryptedData and pushes; Argo applies it.
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: App name (file in infra/k8s/apps, also its namespace)
+        required: true
+
+concurrency: nyehrver-deploy
+
+jobs:
+  seal:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.INFRA_TOKEN || github.token }}
+
+      - name: Install kubeseal
+        working-directory: ${{ runner.temp }}
+        run: |
+          curl -fsSL --retry 3 -o kubeseal.tar.gz https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.41.2/kubeseal-0.41.2-linux-amd64.tar.gz
+          echo '666b5db6788ad1dedb56e2d97064e1cc3779aa77bbd6f4b56b62beeb1941ed79  kubeseal.tar.gz' | sha256sum -c -
+          tar -xzf kubeseal.tar.gz kubeseal
+
+      - name: Seal and push
+        env:
+          APP: ${{ inputs.app }}
+          CERT: ${{ secrets.SEALED_SECRETS_CERT }}
+          ENV_FILE: ${{ secrets[format('{0}_ENV', inputs.app)] }}
+        run: |
+          set -euo pipefail
+          FILE="infra/k8s/apps/$APP.yaml"
+          test -f "$FILE" || { echo "no $FILE"; exit 1; }
+          umask 077
+          dir=$(mktemp -d)
+          trap 'rm -rf "$dir"' EXIT
+          printf '%s\n' "${CERT:?Set the SEALED_SECRETS_CERT repo secret}" > "$dir/cert.pem"
+          printf '%s\n' "${ENV_FILE:?Set the ${APP^^}_ENV repo secret to the app .env contents}" > "$dir/env"
+          data=$(kubectl create secret generic "$APP-env" -n "$APP" --from-env-file="$dir/env" --dry-run=client -o json |
+            "$RUNNER_TEMP/kubeseal" --cert "$dir/cert.pem" --format json | jq -ce .spec.encryptedData)
+          sed -i '/^encryptedData:/d' "$FILE"
+          printf 'encryptedData: %s\n' "$data" >> "$FILE"
+          git config user.name github-actions
+          git config user.email github-actions@users.noreply.github.com
+          git add "$FILE"
+          git commit -m "seal($APP): env" || exit 0
+          git pull --rebase && git push

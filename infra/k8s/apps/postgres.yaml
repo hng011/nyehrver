@@ -16,7 +16,7 @@ host: mypg17.kaktus.foo
 healthPath: ""
 # Alpine image's postgres uid; its default USER is root.
 runAsUser: 70
-# Created out of git by `make vps-db-secret` (no encryptedData here).
+# Sealed from the POSTGRES_ENV repo secret by the "Seal app env" workflow.
 envSecret: postgres-env
 env:
   PGDATA: /var/lib/postgresql/data/pgdata
