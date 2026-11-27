@@ -2,12 +2,11 @@ name: Seal app env
 
 # For apps on stock images (no build): seals the <APP>_ENV repo secret
 # into infra/k8s/apps/<app>.yaml as encryptedData and pushes; Argo applies it.
-# On push: seals every app file with envSecret but no encryptedData whose
+# On every push/merge to main: seals every app file with envSecret but no encryptedData whose
 # <APP>_ENV secret exists. Manual run: (re)seals one app, e.g. after editing its secret.
 on:
   push:
     branches: [main]
-    paths: ["infra/k8s/apps/*.yaml", ".github/workflows/seal.yaml"]
   workflow_dispatch:
     inputs:
       app:
