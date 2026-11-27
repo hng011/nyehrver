@@ -7,7 +7,7 @@ name: Seal app env
 on:
   push:
     branches: [main]
-    paths: ["infra/k8s/apps/*.yaml"]
+    paths: ["infra/k8s/apps/*.yaml", ".github/workflows/seal.yaml"]
   workflow_dispatch:
     inputs:
       app:
