@@ -15,6 +15,8 @@ spec:
     metadata:
       name: '{{ trimSuffix ".yaml" .path.filename }}'
       namespace: argocd
+      # Deleting an app file also deletes its resources, PVC data included.
+      finalizers: [resources-finalizer.argocd.argoproj.io]
     spec:
       project: default
       destination:
